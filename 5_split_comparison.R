@@ -21,7 +21,7 @@ IFX_train <- IFX_train %>%
         group = as.factor(group)
     )
 
-IFX_test <- IFX_test %>%
+IFX_test <- IFX_validation %>%
     rename("response" = "group") %>%
     mutate(
         group = "test",

@@ -1,7 +1,7 @@
 # | ---------------------------------------
 # | Author: Simplezzz
 # | Date: 2024-10-15 21:13:11
-# | LastEditTime: 2026-01-18 23:07:12
+# | LastEditTime: 2026-04-28 23:38:53
 # | FilePath: \R_scripts\4_model_interpretation.R
 # | Description:
 # | ---------------------------------------
@@ -16,89 +16,22 @@ library(themis)
 library(ggthemes)
 library(shapviz)
 library(kernelshap)
+library(cowplot)
 
 load(file = "output/final_mod.RData")
 
-load(file = "output/data_model.RData")
+load(file = "output/IFX_validation.RData")
 
 load(file = "output/testset.RData")
 
 load(file = "output/IFX_workspace.RData")
 
-# ---------------------------------------- final roc
-
-data_stack_roc <- bind_rows(
-    stack_train_pred %>% mutate(Dataset = "Train"),
-    stack_test_pred %>% mutate(Dataset = "Test")
-) %>%
-    mutate(Dataset = as.factor(Dataset, levels = c("Train", "Test")))
-
-plot_stack_roc <- data_stack_roc %>%
-    group_by(Dataset) %>%
-    roc_curve(
-        group,
-        .pred_0
-    ) %>%
-    ggplot(aes(x = 1 - specificity, y = sensitivity, color = Dataset)) +
-    geom_text(
-        aes(x = 0.6, y = 0.25, label = paste("AUROC\nTrain 0.935\nTest 0.897")),
-        color = "black",
-        size = 5,
-        hjust = 0,
-        check_overlap = T
-        ) +
-    geom_path(lwd = 1) +
-    geom_abline(lty = 3) +
-    theme_bw() +
-    labs(x = "1 - Specificity", y = "Sensitivity") +
-    theme(
-        axis.title = element_text(size = 18, face = "bold"),
-        axis.text = element_text(size = 14),
-        legend.text = element_text(size = 14),
-        legend.title = element_text(size = 18, face = "bold"),
-        legend.position = "none"
-    )
-
-plot_stack_roc
-
-tiff(filename = "plot/stack roc.tiff", width = 10, height = 10, res = 300, units = "in", compression = "lzw")
-
-plot_stack_roc
-
-dev.off()
-
-# ---------------------------------------- calibration curve
-
-plot_calibration_curve <- IFX_test %>%
-    mutate(predict(final_mod, new_data = ., type = "prob")) %>%
-    cal_plot_breaks(truth = group, estimate = .pred_0, include_rug = FALSE, num_breaks = 8) +
-    labs(
-        x = "Predicted Probability",
-        y = "Observed Probability"
-    ) +
-    theme_bw() +
-    theme(
-        axis.title = element_text(size = 18, face = "bold"),
-        axis.text = element_text(size = 14),
-        legend.text = element_text(size = 14),
-        legend.title = element_text(size = 18, face = "bold"),
-        legend.position = "none"
-    )
-
-plot_calibration_curve
-
-tiff(filename = "plot/calibration curve.tiff", width = 10, height = 10, res = 300, units = "in", compression = "lzw")
-
-plot_calibration_curve
-
-dev.off()
-
 # ---------------------------------------- 
 
 explainer_final <- DALEXtra::explain_tidymodels(
     model = final_mod,
-    data = data_model,
-    y = data_model$group,
+    data = IFX_validation,
+    y = IFX_validation$group,
     label = "Random Forest"
 )
 
@@ -221,34 +154,17 @@ plot_explain_patient
 
 dev.off()
 
-# ----------------------------------------
-
-library(cowplot)
-
-plot_top_col <- plot_grid(plot_calibration_curve, plot_explain_patient, nrow = 2, align = , label_size = 20, labels = "AUTO", rel_heights = 1, rel_widths = 1)
-
-plot_top_col
-
-plot_interpretation <- plot_grid(plot_top_col, plot_profile, nrow = 1,  labels = c("", "C"), label_size = 20, rel_widths = c(1, 1.5))
-
-plot_interpretation
-
-tiff(filename = "plot/plot interpretation.tiff", width = 15, height = 10, res = 300, units = "in", compression = "lzw")
-
-plot_interpretation
-
-dev.off()
-
 # ---------------------------------------- shap
 ## --------------------------------------- importance
-X_explain <- data_model %>%
+
+X_explain <- IFX_validaton %>%
     select(-group)
 
 calculate_shap <- final_mod %>%
     permshap(X = X_explain, type = "prob") %>%
     shapviz()
 
-shap_value <- calculate_shap$.pred_0
+shap_value <- calculate_shap$.pred_1
 
 plot_shap_importance <- shap_value %>%
     sv_importance(kind = "beeswarm") +
@@ -263,6 +179,8 @@ plot_shap_importance <- shap_value %>%
         legend.text = element_text(size = 14),
         strip.background = element_rect(fill = NA)
     )
+
+plot_shap_importance
 
 tiff(filename = "plot/shap importance.tiff", width = 10, height = 10, res = 300, units = "in", compression = "lzw")
 
@@ -289,8 +207,25 @@ shap_value %>%
         strip.background = element_rect(fill = NA)
     )
 
+# ---------------------------------------- combine
 
+plot_interpret <- plot_grid(
+    plot_profile,
+    plot_explain_patient,
+    ncol = 2,
+    labels = c("A", "B"), # 可选添加标签
+    label_size = 20,
+    rel_widths = c(1.2, 0.8) # 按需调整比例
+)
 
+tiff(
+    filename = "plot/combined_interpret.tiff",
+    width = 16, height = 8, res = 300, units = "in", compression = "lzw"
+)
+
+print(plot_interpret)
+
+dev.off()
 
 # ! end
 
